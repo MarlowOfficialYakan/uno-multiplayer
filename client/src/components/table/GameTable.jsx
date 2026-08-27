@@ -30,15 +30,32 @@ export default function GameTable({
   const playSound = useSound();
   const [shake, setShake] = useState(false);
   const [unoTrigger, setUnoTrigger] = useState(0);
-  const prevHandLen = useRef(hand.length);
+  const [justDrawnId, setJustDrawnId] = useState(null);
+  const prevHandIds = useRef(hand.map((c) => c.id));
 
-  // Fire draw/play SFX hooks whenever the hand size actually changes —
-  // works regardless of whether the change came from us or the server.
+  // Fire draw/play SFX hooks whenever the hand actually changes, and — for
+  // the "quick play after draw" feature — figure out which card is the one
+  // that just got drawn so PlayerHand can highlight it, making it fast to
+  // find and tap without hunting through the fan.
   useEffect(() => {
-    if (hand.length < prevHandLen.current) playSound("cardPlay");
-    if (hand.length > prevHandLen.current) playSound("draw");
-    prevHandLen.current = hand.length;
-  }, [hand.length, playSound]);
+    const prevIds = prevHandIds.current;
+    const currIds = hand.map((c) => c.id);
+
+    if (currIds.length > prevIds.length) {
+      playSound("draw");
+      const prevSet = new Set(prevIds);
+      const newCard = hand.find((c) => !prevSet.has(c.id));
+      if (newCard) {
+        setJustDrawnId(newCard.id);
+        setTimeout(() => setJustDrawnId((id) => (id === newCard.id ? null : id)), 2500);
+      }
+    } else if (currIds.length < prevIds.length) {
+      playSound("cardPlay");
+      setJustDrawnId(null);
+    }
+
+    prevHandIds.current = currIds;
+  }, [hand, playSound]);
 
   const handleCallUno = () => {
     onCallUno();
@@ -54,7 +71,10 @@ export default function GameTable({
 
   return (
     <TableBackground className={shake ? "animate-shake" : ""}>
-      <div className="relative z-10 flex flex-col h-full">
+      {/* overflow-y-auto is a safety net: if a phone's font-size/accessibility
+          settings make content taller than the viewport, it scrolls instead
+          of silently overlapping the sections below it. */}
+      <div className="relative z-10 flex flex-col h-full overflow-y-auto">
         <AnimatePresence>
           {error && (
             <motion.p
@@ -62,20 +82,20 @@ export default function GameTable({
               initial={{ y: -20, opacity: 0 }}
               animate={{ y: 0, opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="mx-auto mt-2 px-4 py-1.5 rounded-full bg-uno-red/90 text-white text-sm font-body shadow-glow-red"
+              className="mx-auto mt-2 px-4 py-1.5 rounded-full bg-uno-red/90 text-white text-sm font-body shadow-glow-red shrink-0"
             >
               {error}
             </motion.p>
           )}
         </AnimatePresence>
 
-        <div className="flex flex-wrap justify-center gap-4 sm:gap-8 pt-4 px-2">
+        <div className="flex flex-wrap justify-center gap-4 sm:gap-8 pt-4 px-2 shrink-0">
           {opponents.map((p) => (
             <OpponentSeat key={p.id} player={p} isActive={game.currentPlayerId === p.id} onCatchUno={onCatchUno} />
           ))}
         </div>
 
-        <div className="flex-1 flex flex-col items-center justify-center gap-4">
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 min-h-[9rem] py-3">
           <div className="flex items-center gap-8 sm:gap-14">
             <DrawPile count={game.drawPileCount} onClick={onDraw} disabled={!isMyTurn} />
             <DiscardPile topCard={game.topCard} currentColor={game.currentColor} />
@@ -97,7 +117,7 @@ export default function GameTable({
           </motion.button>
         </div>
 
-        <PlayerHand cards={hand} disabled={!isMyTurn} onPlay={onPlay} />
+        <PlayerHand cards={hand} disabled={!isMyTurn} onPlay={onPlay} justDrawnId={justDrawnId} />
       </div>
 
       <AnimatePresence>{pendingWild && <ColorPicker key="picker" onPick={onPickColor} />}</AnimatePresence>

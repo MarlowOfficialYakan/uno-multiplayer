@@ -6,6 +6,8 @@ export function getCardLabel(card) {
       return "★";
     case "wild4":
       return "+4";
+    case "wild10":
+      return "+10";
     case "draw2":
       return "+2";
     case "skip":

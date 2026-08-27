@@ -3,6 +3,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import { socket, emitAsync, getClientId, saveSession, loadSession, clearSession } from "./socket";
 import TableBackground from "./components/table/TableBackground";
 import GameTable from "./components/table/GameTable";
+import SettingsToggle from "./components/SettingsToggle";
 
 function ChatPanel({ messages, onSend }) {
   const [text, setText] = useState("");
@@ -75,11 +76,14 @@ function ChatToggle({ messages, onSend }) {
   );
 }
 
+const PLACE_LABEL = ["🥇 Juara 1", "🥈 Juara 2", "🥉 Juara 3"];
+
 export default function App() {
   const [connected, setConnected] = useState(socket.connected);
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
   const [maxPlayers, setMaxPlayers] = useState(4);
+  const [winMode, setWinMode] = useState("single");
   const [room, setRoom] = useState(null);
   const [game, setGame] = useState(null);
   const [hand, setHand] = useState([]);
@@ -115,7 +119,12 @@ export default function App() {
       tryRejoin();
     };
     const onDisconnect = () => setConnected(false);
-    const onRoomUpdate = (r) => setRoom(r);
+    const onRoomUpdate = (r) => {
+      setRoom(r);
+      // Keep the saved session's room code in sync — matters when the host
+      // regenerates the room code, since the code we joined with is now stale.
+      saveSession(r.code);
+    };
     const onGameUpdate = (g) => setGame(g);
     const onHand = (h) => setHand(h);
     const onErr = (msg) => setError(msg);
@@ -147,7 +156,7 @@ export default function App() {
   const createRoom = async () => {
     clearError();
     try {
-      const res = await emitAsync("create_room", { name, maxPlayers, clientId: myId });
+      const res = await emitAsync("create_room", { name, maxPlayers, winMode, clientId: myId });
       setRoom(res.room);
       saveSession(res.room.code);
     } catch (e) {
@@ -170,6 +179,33 @@ export default function App() {
     clearError();
     try {
       await emitAsync("start_game", {});
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const updateMaxPlayers = async (n) => {
+    clearError();
+    try {
+      await emitAsync("update_max_players", { maxPlayers: n });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const updateWinMode = async (mode) => {
+    clearError();
+    try {
+      await emitAsync("update_win_mode", { winMode: mode });
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const regenerateCode = async () => {
+    clearError();
+    try {
+      await emitAsync("regenerate_code", {});
     } catch (e) {
       setError(e.message);
     }
@@ -255,6 +291,7 @@ export default function App() {
   if (!room) {
     return (
       <TableBackground>
+        <SettingsToggle />
         <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 px-4 text-center overflow-y-auto py-6">
           <motion.h1
             initial={{ y: -16, opacity: 0 }}
@@ -301,6 +338,34 @@ export default function App() {
                 ))}
               </select>
             </label>
+            <div className="text-left">
+              <p className="text-sm text-white/70 font-body mb-1">Mode kemenangan</p>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setWinMode("single")}
+                  className={`flex-1 py-1.5 rounded-full text-xs font-bold font-body ${
+                    winMode === "single" ? "bg-uno-red text-white" : "bg-white/10 text-white/60"
+                  }`}
+                >
+                  1 Pemenang
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setWinMode("lastStanding")}
+                  className={`flex-1 py-1.5 rounded-full text-xs font-bold font-body ${
+                    winMode === "lastStanding" ? "bg-uno-red text-white" : "bg-white/10 text-white/60"
+                  }`}
+                >
+                  Ranking Semua
+                </button>
+              </div>
+              <p className="text-[10px] text-white/50 font-body mt-1 leading-snug">
+                {winMode === "single"
+                  ? "Game berakhir begitu ada 1 pemenang."
+                  : "Main terus sampai tersisa 1 pemain (juara 1, 2, 3, dst.)."}
+              </p>
+            </div>
             <motion.button
               whileTap={{ scale: 0.96 }}
               whileHover={{ scale: 1.02 }}
@@ -340,6 +405,7 @@ export default function App() {
     const isHost = room.hostId === myId;
     return (
       <TableBackground>
+        <SettingsToggle />
         <div className="relative z-10 h-full flex flex-col items-center justify-center gap-3 px-4 text-center overflow-y-auto py-6">
           <h1 className="font-display text-3xl font-black text-white">
             Room: <span className="text-uno-yellow">{room.code}</span>
@@ -365,8 +431,63 @@ export default function App() {
             ))}
           </ul>
           <p className="text-white/60 text-xs font-body">
-            {room.players.length} / {room.maxPlayers} pemain
+            {room.players.length} / {room.maxPlayers} pemain — mode:{" "}
+            {room.winMode === "lastStanding" ? "Ranking Semua" : "1 Pemenang"}
           </p>
+
+          {isHost && (
+            <div className="w-72 bg-white/5 border border-white/10 rounded-2xl p-3 flex flex-col gap-3 text-left">
+              <p className="font-display font-bold text-white text-sm text-center">Pengaturan Room (Host)</p>
+
+              <label className="flex items-center justify-between text-sm text-white/70 font-body">
+                Maks pemain
+                <select
+                  value={room.maxPlayers}
+                  onChange={(e) => updateMaxPlayers(Number(e.target.value))}
+                  className="bg-slate-800 rounded-lg px-2 py-1 text-white"
+                >
+                  {Array.from({ length: 9 }, (_, i) => i + 2).map((n) => (
+                    <option key={n} value={n} disabled={n < room.players.length}>
+                      {n}
+                    </option>
+                  ))}
+                </select>
+              </label>
+
+              <div>
+                <p className="text-sm text-white/70 font-body mb-1">Mode kemenangan</p>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => updateWinMode("single")}
+                    className={`flex-1 py-1.5 rounded-full text-xs font-bold font-body ${
+                      room.winMode === "single" ? "bg-uno-red text-white" : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    1 Pemenang
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => updateWinMode("lastStanding")}
+                    className={`flex-1 py-1.5 rounded-full text-xs font-bold font-body ${
+                      room.winMode === "lastStanding" ? "bg-uno-red text-white" : "bg-white/10 text-white/60"
+                    }`}
+                  >
+                    Ranking Semua
+                  </button>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                onClick={regenerateCode}
+                className="py-2 rounded-full bg-white/10 text-white text-xs font-bold font-body"
+              >
+                🔄 Ganti Kode Room
+              </button>
+            </div>
+          )}
+
           {isHost ? (
             <motion.button
               whileTap={{ scale: 0.96 }}
@@ -392,6 +513,7 @@ export default function App() {
   if (!game) {
     return (
       <TableBackground>
+        <SettingsToggle />
         <div className="relative z-10 h-full flex items-center justify-center text-white/60 font-body">
           Memuat game...
         </div>
@@ -400,10 +522,14 @@ export default function App() {
   }
 
   if (game.status === "finished") {
+    const isRanked = game.winMode === "lastStanding" && Array.isArray(game.finishOrder) && game.finishOrder.length > 0;
     const winner = game.players.find((p) => p.id === game.winnerId);
+    const names = game.allNames || {};
+
     return (
       <TableBackground>
-        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 text-center px-4">
+        <SettingsToggle />
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 text-center px-4 overflow-y-auto py-6">
           <motion.h1
             initial={{ scale: 0.5, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
@@ -412,9 +538,30 @@ export default function App() {
           >
             🎉 Game Selesai
           </motion.h1>
-          <p className="font-body text-white/90 text-lg">
-            Pemenang: <span className="font-bold text-white">{winner ? winner.name : "-"}</span>
-          </p>
+
+          {isRanked ? (
+            <ul className="flex flex-col gap-1.5 font-body text-white w-64">
+              {game.finishOrder.map((pid, i) => (
+                <motion.li
+                  key={pid}
+                  initial={{ opacity: 0, x: -10 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  transition={{ delay: i * 0.1 }}
+                  className={`flex items-center justify-between rounded-xl px-3 py-2 ${
+                    i === 0 ? "bg-uno-yellow/20 border border-uno-yellow/60" : "bg-white/5"
+                  }`}
+                >
+                  <span>{PLACE_LABEL[i] || `#${i + 1}`}</span>
+                  <span className="font-bold">{names[pid] || "?"}</span>
+                </motion.li>
+              ))}
+            </ul>
+          ) : (
+            <p className="font-body text-white/90 text-lg">
+              Pemenang: <span className="font-bold text-white">{winner ? winner.name : "-"}</span>
+            </p>
+          )}
+
           <motion.button
             whileTap={{ scale: 0.96 }}
             whileHover={{ scale: 1.03 }}
@@ -442,6 +589,7 @@ export default function App() {
         onPickColor={confirmWildColor}
         error={error}
       />
+      <SettingsToggle />
       <div className="fixed bottom-3 right-3 z-40">
         <ChatToggle messages={messages} onSend={sendChat} />
       </div>

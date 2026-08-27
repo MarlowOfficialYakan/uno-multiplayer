@@ -110,6 +110,7 @@ function publicRoom(room) {
     code: room.code,
     hostId: room.hostId,
     maxPlayers: room.maxPlayers,
+    winMode: room.winMode,
     status: room.status,
     players: room.players.map((p) => ({ id: p.id, name: p.name, connected: p.connected })),
   };
@@ -129,8 +130,9 @@ io.on("connection", (socket) => {
       let maxPlayers = parseInt(payload.maxPlayers, 10);
       if (!Number.isFinite(maxPlayers)) maxPlayers = 4;
       maxPlayers = Math.max(MIN_PLAYERS, Math.min(MAX_PLAYERS_CAP, maxPlayers));
+      const winMode = payload.winMode === "lastStanding" ? "lastStanding" : "single";
 
-      const room = rooms.createRoom(clientId, name, maxPlayers);
+      const room = rooms.createRoom(clientId, name, maxPlayers, winMode);
       socket.join(room.code);
       socket.data.roomCode = room.code;
       socket.data.clientId = clientId;
@@ -186,6 +188,49 @@ io.on("connection", (socket) => {
       const code = socket.data.roomCode;
       const room = rooms.startGame(code, socket.data.clientId);
       ack?.({ ok: true });
+      broadcastRoom(room);
+    })
+  );
+
+  socket.on(
+    "update_max_players",
+    guarded(socket, (payload, ack) => {
+      const room = rooms.updateMaxPlayers(socket.data.roomCode, socket.data.clientId, payload.maxPlayers);
+      ack?.({ ok: true });
+      broadcastRoom(room);
+    })
+  );
+
+  socket.on(
+    "update_win_mode",
+    guarded(socket, (payload, ack) => {
+      const room = rooms.updateWinMode(socket.data.roomCode, socket.data.clientId, payload.winMode);
+      ack?.({ ok: true });
+      broadcastRoom(room);
+    })
+  );
+
+  // Host-only, lobby-only: assigns a new room code and moves every
+  // currently-connected socket from the old Socket.IO room to the new one,
+  // so everyone keeps receiving updates without needing to manually rejoin.
+  socket.on(
+    "regenerate_code",
+    guarded(socket, (_payload, ack) => {
+      const oldCode = socket.data.roomCode;
+      const room = rooms.regenerateCode(oldCode, socket.data.clientId);
+      const newCode = room.code;
+
+      for (const p of room.players) {
+        const sid = clientToSocket.get(p.id);
+        if (!sid) continue;
+        const s = io.sockets.sockets.get(sid);
+        if (!s) continue;
+        s.join(newCode);
+        s.leave(oldCode);
+        s.data.roomCode = newCode;
+      }
+
+      ack?.({ ok: true, code: newCode });
       broadcastRoom(room);
     })
   );

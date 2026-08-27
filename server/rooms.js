@@ -14,7 +14,7 @@ class RoomManager {
     this.rooms = new Map(); // code -> room
   }
 
-  createRoom(playerId, hostName, maxPlayers) {
+  createRoom(playerId, hostName, maxPlayers, winMode = "single") {
     let code;
     do {
       code = genCode();
@@ -24,6 +24,7 @@ class RoomManager {
       code,
       hostId: playerId,
       maxPlayers,
+      winMode: winMode === "lastStanding" ? "lastStanding" : "single",
       status: "lobby", // lobby | playing | finished
       players: [{ id: playerId, name: hostName, connected: true, removalTimer: null }],
       game: null,
@@ -65,13 +66,60 @@ class RoomManager {
     return room;
   }
 
+  /** Host-only, lobby-only: change the max player count. */
+  updateMaxPlayers(code, requesterId, maxPlayers) {
+    const room = this.getRoom(code);
+    if (!room) throw new Error("Room tidak ditemukan.");
+    if (room.hostId !== requesterId) throw new Error("Hanya host yang bisa mengubah pengaturan.");
+    if (room.status !== "lobby") throw new Error("Tidak bisa mengubah pengaturan saat game berjalan.");
+    const n = Math.max(2, Math.min(10, Math.floor(Number(maxPlayers) || 0)));
+    if (n < room.players.length) {
+      throw new Error(`Sudah ada ${room.players.length} pemain — tidak bisa diset lebih kecil dari itu.`);
+    }
+    room.maxPlayers = n;
+    return room;
+  }
+
+  /** Host-only, lobby-only: change the win mode for the next game. */
+  updateWinMode(code, requesterId, winMode) {
+    const room = this.getRoom(code);
+    if (!room) throw new Error("Room tidak ditemukan.");
+    if (room.hostId !== requesterId) throw new Error("Hanya host yang bisa mengubah pengaturan.");
+    if (room.status !== "lobby") throw new Error("Tidak bisa mengubah pengaturan saat game berjalan.");
+    room.winMode = winMode === "lastStanding" ? "lastStanding" : "single";
+    return room;
+  }
+
+  /**
+   * Host-only, lobby-only: assign a brand new room code. The caller (index.js)
+   * is responsible for actually moving connected sockets from the old
+   * Socket.IO room to the new one — this just updates the map/object.
+   */
+  regenerateCode(oldCode, requesterId) {
+    const room = this.getRoom(oldCode);
+    if (!room) throw new Error("Room tidak ditemukan.");
+    if (room.hostId !== requesterId) throw new Error("Hanya host yang bisa mengganti kode room.");
+    if (room.status !== "lobby") throw new Error("Tidak bisa mengganti kode saat game berjalan.");
+    let newCode;
+    do {
+      newCode = genCode();
+    } while (this.rooms.has(newCode));
+    this.rooms.delete(room.code);
+    room.code = newCode;
+    this.rooms.set(newCode, room);
+    return room;
+  }
+
   startGame(code, requesterId) {
     const room = this.getRoom(code);
     if (!room) throw new Error("Room tidak ditemukan.");
     if (room.hostId !== requesterId) throw new Error("Hanya host yang bisa memulai game.");
     if (room.players.length < 2) throw new Error("Minimal 2 pemain untuk mulai.");
     if (room.status !== "lobby") throw new Error("Game sudah berjalan.");
-    room.game = new UnoGame(room.players.map((p) => ({ id: p.id, name: p.name })));
+    room.game = new UnoGame(
+      room.players.map((p) => ({ id: p.id, name: p.name })),
+      room.winMode
+    );
     room.status = "playing";
     return room;
   }

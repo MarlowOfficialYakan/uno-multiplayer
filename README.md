@@ -42,6 +42,45 @@ project ini jalankan `npm install` lagi di folder `client/` sebelum
 `npm run dev` / deploy ulang di Vercel (Vercel otomatis `npm install` saat
 build, jadi cukup redeploy).
 
+## Update: perbaikan bug, kartu +10, mode Hemat, pengaturan room
+
+- **Perbaikan overlap teks** — label "N kartu" di draw pile / discard pile
+  sebelumnya `position: absolute` di luar kotaknya sehingga tidak dihitung
+  dalam layout dan bisa numpuk dengan teks lain di beberapa HP (tergantung
+  setelan ukuran font perangkat). Sekarang jadi bagian layout normal, plus
+  ditambah `overflow-hidden` di beberapa kontainer kartu sebagai pengaman.
+- **Kartu baru ditarik disorot** — setelah `draw_card`, kartu yang baru
+  masuk ke tangan mendapat cincin putih berdenyut selama beberapa detik
+  supaya cepat ditemukan & langsung dimainkan (`justDrawnId` di
+  `GameTable.jsx` / `PlayerHand.jsx`).
+- **Kartu +10** — house-rule wild card baru (`wild10`): pilih warna, pemain
+  berikutnya tarik 10 kartu (bisa ditumpuk dengan +2/+4 lain). Ditambahkan
+  di `server/game.js` (deck + logika) dan label kartu di client.
+- **Mode Grafis (Tinggi/Hemat)** — tombol ⚙️ di pojok kanan atas, tersedia
+  di semua layar. Mode Hemat mematikan glow/blur/partikel/tilt 3D dan
+  bahkan melepas Framer Motion dari kartu sepenuhnya, untuk HP dengan
+  spesifikasi rendah/menengah. Pilihan tersimpan di `localStorage`
+  (`src/context/SettingsContext.jsx`).
+- **Komponen kartu di-memoize** (`React.memo`) untuk mengurangi re-render
+  yang tidak perlu — bagian dari optimasi performa.
+- **Pengaturan Room (host, saat masih di lobby)**:
+  - Ganti kode room (`regenerate_code`) — semua pemain yang sudah connect
+    otomatis dipindahkan ke room Socket.IO yang baru di server, tidak perlu
+    join manual ulang.
+  - Ubah jumlah maksimal pemain (`update_max_players`) — tidak bisa diset
+    lebih kecil dari jumlah pemain yang sudah gabung.
+  - Pilih mode kemenangan (`update_win_mode`):
+    - **1 Pemenang** — game selesai begitu ada yang habis kartunya (perilaku
+      lama).
+    - **Ranking Semua** — permainan lanjut sampai tersisa 1 pemain; setiap
+      pemain yang habis kartunya dicatat urutannya (Juara 1, 2, 3, dst.),
+      pemain terakhir yang masih pegang kartu jadi juru kunci. Layar hasil
+      akhir menampilkan daftar ranking lengkap.
+
+Semua perubahan di atas murni menambah — tidak ada event Socket.io lama
+yang berubah bentuk, jadi kompatibel dengan alur reconnect/anti-cheat yang
+sudah ada.
+
 Kenapa server tidak di Vercel? Vercel serverless function tidak cocok untuk
 koneksi WebSocket yang harus tetap hidup selama game berlangsung (lihat
 penjelasan sebelumnya). Jadi: **frontend di Vercel, server game di Render
