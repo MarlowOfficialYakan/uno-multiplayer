@@ -8,8 +8,39 @@ otoritatif (anti-cheat) via Socket.IO.
 ```
 uno-multiplayer/
   server/   -> Node.js + Express + Socket.io (deploy ke Render/Railway/Fly.io — BUKAN Vercel)
-  client/   -> React + Vite (deploy ke Vercel)
+  client/   -> React + Vite + Tailwind + Framer Motion (deploy ke Vercel)
 ```
+
+## Tampilan (UI/UX)
+
+Client sekarang pakai tema "meja kasino premium": felt gelap dengan vignette
+& partikel ambient, kartu 3D (tilt mengikuti pointer + glow neon sesuai
+warna), Wild/+4 bergaya holografik, tangan pemain melengkung seperti kartu
+sungguhan, kartu terbang dengan animasi pegas saat dimainkan, dan color
+picker melingkar untuk Wild — semua pakai **Tailwind CSS** + **Framer
+Motion**, tanpa mengubah logika game/Socket.io sama sekali.
+
+Struktur komponen baru:
+```
+client/src/
+  components/
+    cards/PlayingCard.jsx   -> kartu depan (3D tilt, glow, holografik)
+    cards/CardBack.jsx      -> kartu belakang (tumpukan lawan & draw pile)
+    table/GameTable.jsx     -> orkestrator layar bermain
+    table/PlayerHand.jsx    -> tangan pemain, fan arc
+    table/OpponentSeat.jsx  -> avatar lawan + turn ring + tumpukan kartu
+    table/DiscardPile.jsx / DrawPile.jsx
+    table/ColorPicker.jsx   -> pemilih warna radial untuk Wild
+    table/UnoCallout.jsx    -> animasi "UNO!" layar penuh
+    table/TableBackground.jsx / TurnRing.jsx
+  hooks/useSound.js         -> hook SFX (placeholder, tinggal isi path file di /public/sfx/)
+  utils/theme.js, cardLabel.js
+```
+
+Karena ada dependency baru (`tailwindcss`, `framer-motion`), setelah extract
+project ini jalankan `npm install` lagi di folder `client/` sebelum
+`npm run dev` / deploy ulang di Vercel (Vercel otomatis `npm install` saat
+build, jadi cukup redeploy).
 
 Kenapa server tidak di Vercel? Vercel serverless function tidak cocok untuk
 koneksi WebSocket yang harus tetap hidup selama game berlangsung (lihat

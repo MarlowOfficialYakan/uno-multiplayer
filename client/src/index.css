@@ -1,0 +1,34 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  @apply bg-felt-900 text-white font-body overflow-hidden;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Cards use inline transformStyle for 3D tilt; these utilities support that. */
+.perspective-1000 {
+  perspective: 1000px;
+}
+.preserve-3d {
+  transform-style: preserve-3d;
+}
+
+/* Respect reduced-motion preferences: kill the decorative ambient loops. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-float1,
+  .animate-float2,
+  .animate-float3,
+  .animate-breathe,
+  .animate-holo,
+  .animate-pulse-ring {
+    animation: none !important;
+  }
+}

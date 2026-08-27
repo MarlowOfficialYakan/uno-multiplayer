@@ -1,41 +1,8 @@
 import React, { useEffect, useState, useCallback, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
 import { socket, emitAsync, getClientId, saveSession, loadSession, clearSession } from "./socket";
-
-const COLOR_HEX = {
-  red: "#e63946",
-  yellow: "#f4c430",
-  green: "#2a9d59",
-  blue: "#2b6cb0",
-  wild: "#2d2d2d",
-};
-
-function Card({ card, onClick, disabled, small }) {
-  const bg = COLOR_HEX[card.color] || "#333";
-  const label =
-    card.type === "number"
-      ? card.value
-      : card.type === "wild"
-      ? "★"
-      : card.type === "wild4"
-      ? "+4"
-      : card.type === "draw2"
-      ? "+2"
-      : card.type === "skip"
-      ? "⦸"
-      : card.type === "reverse"
-      ? "⇄"
-      : "?";
-  return (
-    <button
-      className={`uno-card${small ? " small" : ""}${disabled ? " disabled" : ""}`}
-      style={{ background: bg }}
-      onClick={() => !disabled && onClick?.(card)}
-      disabled={disabled}
-    >
-      {label}
-    </button>
-  );
-}
+import TableBackground from "./components/table/TableBackground";
+import GameTable from "./components/table/GameTable";
 
 function ChatPanel({ messages, onSend }) {
   const [text, setText] = useState("");
@@ -53,28 +20,57 @@ function ChatPanel({ messages, onSend }) {
   };
 
   return (
-    <div className="chat-panel">
-      <div className="chat-messages">
+    <div className="w-full max-w-xs bg-black/30 backdrop-blur rounded-2xl border border-white/10 p-2 flex flex-col gap-2">
+      <div className="max-h-28 overflow-y-auto flex flex-col gap-1 text-xs font-body text-left px-1">
         {messages.map((m, i) => (
-          <div key={i} className="chat-line">
-            <b>{m.name}:</b> {m.text}
+          <div key={i} className="break-words">
+            <b className="text-uno-yellow">{m.name}:</b> {m.text}
           </div>
         ))}
         <div ref={endRef} />
       </div>
-      <div className="chat-input-row">
+      <div className="flex gap-2">
         <input
-          className="input chat-input"
+          className="flex-1 rounded-full bg-white/10 px-3 py-1.5 text-sm text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-uno-yellow font-body"
           placeholder="Ketik pesan..."
           value={text}
           maxLength={200}
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && send()}
         />
-        <button className="btn small" onClick={send}>
+        <button
+          onClick={send}
+          className="px-3 py-1.5 rounded-full bg-uno-blue text-white text-sm font-bold shadow-glow-blue shrink-0"
+        >
           Kirim
         </button>
       </div>
+    </div>
+  );
+}
+
+function ChatToggle({ messages, onSend }) {
+  const [open, setOpen] = useState(false);
+  return (
+    <div className="flex flex-col items-end gap-2">
+      <AnimatePresence>
+        {open && (
+          <motion.div
+            initial={{ opacity: 0, y: 10, scale: 0.95 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: 10, scale: 0.95 }}
+          >
+            <ChatPanel messages={messages} onSend={onSend} />
+          </motion.div>
+        )}
+      </AnimatePresence>
+      <motion.button
+        whileTap={{ scale: 0.92 }}
+        onClick={() => setOpen((o) => !o)}
+        className="w-11 h-11 rounded-full bg-white/10 backdrop-blur border border-white/20 text-white flex items-center justify-center shadow-lg text-lg"
+      >
+        💬
+      </motion.button>
     </div>
   );
 }
@@ -247,180 +243,208 @@ export default function App() {
 
   if (rejoining) {
     return (
-      <div className="screen center">
-        <h1>UNO Online</h1>
-        <p className="status">Memuat sesi...</p>
-      </div>
+      <TableBackground>
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-2 text-white">
+          <h1 className="font-display text-3xl font-black tracking-wide">UNO Online</h1>
+          <p className="text-white/60 text-sm font-body">Memuat sesi...</p>
+        </div>
+      </TableBackground>
     );
   }
 
   if (!room) {
     return (
-      <div className="screen center">
-        <h1>UNO Online</h1>
-        <p className="status">{connected ? "Terhubung ke server" : "Menghubungkan..."}</p>
-        {error && <p className="error">{error}</p>}
+      <TableBackground>
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 px-4 text-center overflow-y-auto py-6">
+          <motion.h1
+            initial={{ y: -16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            className="font-display text-5xl sm:text-6xl font-black text-white drop-shadow-[0_0_20px_rgba(255,214,10,0.4)]"
+          >
+            UNO <span className="text-uno-yellow">Online</span>
+          </motion.h1>
+          <p className="text-white/50 text-xs font-body">{connected ? "Terhubung ke server" : "Menghubungkan..."}</p>
+          <AnimatePresence>
+            {error && (
+              <motion.p
+                initial={{ opacity: 0, y: -8 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                className="px-3 py-1 rounded-full bg-uno-red/90 text-white text-sm font-body"
+              >
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
 
-        <input
-          className="input"
-          placeholder="Nama kamu"
-          value={name}
-          maxLength={16}
-          onChange={(e) => setName(e.target.value)}
-        />
-
-        <div className="panel">
-          <h3>Buat Room</h3>
-          <label>
-            Maks pemain:{" "}
-            <select value={maxPlayers} onChange={(e) => setMaxPlayers(Number(e.target.value))}>
-              {Array.from({ length: 9 }, (_, i) => i + 2).map((n) => (
-                <option key={n} value={n}>
-                  {n}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button className="btn primary" onClick={createRoom} disabled={!name}>
-            Buat Room
-          </button>
-        </div>
-
-        <div className="panel">
-          <h3>Gabung Room</h3>
           <input
-            className="input"
-            placeholder="Kode room"
-            value={joinCode}
-            maxLength={8}
-            onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            className="w-64 rounded-full bg-white/10 border border-white/15 px-4 py-2.5 text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-uno-yellow font-body"
+            placeholder="Nama kamu"
+            value={name}
+            maxLength={16}
+            onChange={(e) => setName(e.target.value)}
           />
-          <button className="btn" onClick={joinRoom} disabled={!name || !joinCode}>
-            Gabung
-          </button>
+
+          <div className="w-72 bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 backdrop-blur">
+            <h3 className="font-display font-bold text-white text-lg">Buat Room</h3>
+            <label className="flex items-center justify-between text-sm text-white/70 font-body">
+              Maks pemain
+              <select
+                value={maxPlayers}
+                onChange={(e) => setMaxPlayers(Number(e.target.value))}
+                className="bg-slate-800 rounded-lg px-2 py-1 text-white"
+              >
+                {Array.from({ length: 9 }, (_, i) => i + 2).map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.02 }}
+              onClick={createRoom}
+              disabled={!name}
+              className="py-2.5 rounded-full font-display font-bold text-white bg-uno-red shadow-glow-red disabled:opacity-30 disabled:shadow-none"
+            >
+              Buat Room
+            </motion.button>
+          </div>
+
+          <div className="w-72 bg-white/5 border border-white/10 rounded-2xl p-4 flex flex-col gap-3 backdrop-blur">
+            <h3 className="font-display font-bold text-white text-lg">Gabung Room</h3>
+            <input
+              className="rounded-full bg-white/10 border border-white/15 px-4 py-2 text-white placeholder-white/40 outline-none focus:ring-2 focus:ring-uno-blue font-body text-center tracking-widest"
+              placeholder="Kode room"
+              value={joinCode}
+              maxLength={8}
+              onChange={(e) => setJoinCode(e.target.value.toUpperCase())}
+            />
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.02 }}
+              onClick={joinRoom}
+              disabled={!name || !joinCode}
+              className="py-2.5 rounded-full font-display font-bold text-white bg-uno-blue shadow-glow-blue disabled:opacity-30 disabled:shadow-none"
+            >
+              Gabung
+            </motion.button>
+          </div>
         </div>
-      </div>
+      </TableBackground>
     );
   }
 
   if (room.status === "lobby") {
     const isHost = room.hostId === myId;
     return (
-      <div className="screen center">
-        <h1>Room: {room.code}</h1>
-        <p>Bagikan kode ini ke teman-temanmu.</p>
-        {error && <p className="error">{error}</p>}
-        <ul className="player-list">
-          {room.players.map((p) => (
-            <li key={p.id}>
-              {p.name} {p.id === room.hostId && "👑"} {!p.connected && "(terputus)"}
-            </li>
-          ))}
-        </ul>
-        <p>
-          {room.players.length} / {room.maxPlayers} pemain
-        </p>
-        {isHost ? (
-          <button className="btn primary" onClick={startGame} disabled={room.players.length < 2}>
-            Mulai Game
+      <TableBackground>
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-3 px-4 text-center overflow-y-auto py-6">
+          <h1 className="font-display text-3xl font-black text-white">
+            Room: <span className="text-uno-yellow">{room.code}</span>
+          </h1>
+          <p className="text-white/50 text-xs font-body">Bagikan kode ini ke teman-temanmu.</p>
+          <AnimatePresence>
+            {error && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="px-3 py-1 rounded-full bg-uno-red/90 text-white text-sm font-body"
+              >
+                {error}
+              </motion.p>
+            )}
+          </AnimatePresence>
+          <ul className="flex flex-col gap-1 font-body text-white/90 text-sm">
+            {room.players.map((p) => (
+              <li key={p.id}>
+                {p.name} {p.id === room.hostId && "👑"} {!p.connected && "(terputus)"}
+              </li>
+            ))}
+          </ul>
+          <p className="text-white/60 text-xs font-body">
+            {room.players.length} / {room.maxPlayers} pemain
+          </p>
+          {isHost ? (
+            <motion.button
+              whileTap={{ scale: 0.96 }}
+              whileHover={{ scale: 1.03 }}
+              onClick={startGame}
+              disabled={room.players.length < 2}
+              className="px-6 py-2.5 rounded-full font-display font-bold text-white bg-uno-green shadow-glow-green disabled:opacity-30 disabled:shadow-none"
+            >
+              Mulai Game
+            </motion.button>
+          ) : (
+            <p className="text-white/50 text-sm font-body">Menunggu host memulai game...</p>
+          )}
+          <ChatPanel messages={messages} onSend={sendChat} />
+          <button onClick={leaveRoom} className="text-white/50 text-xs underline font-body">
+            Keluar Room
           </button>
-        ) : (
-          <p>Menunggu host memulai game...</p>
-        )}
-        <ChatPanel messages={messages} onSend={sendChat} />
-        <button className="btn" onClick={leaveRoom}>
-          Keluar Room
-        </button>
-      </div>
+        </div>
+      </TableBackground>
     );
   }
 
-  if (!game) return <div className="screen center">Memuat game...</div>;
-
-  const isMyTurn = game.currentPlayerId === myId;
-  const top = game.topCard;
+  if (!game) {
+    return (
+      <TableBackground>
+        <div className="relative z-10 h-full flex items-center justify-center text-white/60 font-body">
+          Memuat game...
+        </div>
+      </TableBackground>
+    );
+  }
 
   if (game.status === "finished") {
     const winner = game.players.find((p) => p.id === game.winnerId);
     return (
-      <div className="screen center">
-        <h1>🎉 Game Selesai</h1>
-        <p>Pemenang: {winner ? winner.name : "-"}</p>
-        <button className="btn" onClick={leaveRoom}>
-          Kembali ke Menu
-        </button>
-      </div>
+      <TableBackground>
+        <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 text-center px-4">
+          <motion.h1
+            initial={{ scale: 0.5, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            transition={{ type: "spring", stiffness: 200 }}
+            className="font-display text-5xl font-black text-uno-yellow drop-shadow-[0_0_30px_rgba(255,214,10,0.6)]"
+          >
+            🎉 Game Selesai
+          </motion.h1>
+          <p className="font-body text-white/90 text-lg">
+            Pemenang: <span className="font-bold text-white">{winner ? winner.name : "-"}</span>
+          </p>
+          <motion.button
+            whileTap={{ scale: 0.96 }}
+            whileHover={{ scale: 1.03 }}
+            onClick={leaveRoom}
+            className="px-6 py-2.5 rounded-full font-display font-bold text-white bg-uno-blue shadow-glow-blue"
+          >
+            Kembali ke Menu
+          </motion.button>
+        </div>
+      </TableBackground>
     );
   }
 
   return (
-    <div className="screen game">
-      {error && <p className="error">{error}</p>}
-
-      <div className="opponents">
-        {game.players
-          .filter((p) => p.id !== myId)
-          .map((p) => (
-            <div key={p.id} className={`opponent${game.currentPlayerId === p.id ? " active" : ""}`}>
-              <div className="opponent-name">
-                {p.name} {!p.connected && "⚠️"}
-              </div>
-              <div className="opponent-cards">{p.cardCount} kartu</div>
-              {p.mustCallUno && (
-                <button className="btn small danger" onClick={() => catchUno(p.id)}>
-                  Tangkap UNO!
-                </button>
-              )}
-            </div>
-          ))}
+    <>
+      <GameTable
+        game={game}
+        hand={hand}
+        myId={myId}
+        onPlay={playCard}
+        onDraw={drawCard}
+        onCallUno={callUno}
+        onCatchUno={catchUno}
+        pendingWild={pendingWild}
+        onPickColor={confirmWildColor}
+        error={error}
+      />
+      <div className="fixed bottom-3 right-3 z-40">
+        <ChatToggle messages={messages} onSend={sendChat} />
       </div>
-
-      <div className="table">
-        <div className="pile draw" onClick={isMyTurn ? drawCard : undefined}>
-          <div className="uno-card back" />
-          <span>{game.drawPileCount} kartu</span>
-        </div>
-        <div className="pile discard">
-          {top && <Card card={top} disabled />}
-          <span className="current-color" style={{ background: COLOR_HEX[game.currentColor] }} />
-        </div>
-      </div>
-
-      <p className="turn-indicator">
-        {isMyTurn ? "Giliranmu!" : `Giliran ${game.players.find((p) => p.id === game.currentPlayerId)?.name}`}
-        {game.pendingDraw > 0 && ` — tumpukan tarik: ${game.pendingDraw}`}
-      </p>
-
-      {pendingWild && (
-        <div className="color-picker">
-          <p>Pilih warna:</p>
-          {["red", "yellow", "green", "blue"].map((c) => (
-            <button
-              key={c}
-              className="color-btn"
-              style={{ background: COLOR_HEX[c] }}
-              onClick={() => confirmWildColor(c)}
-            />
-          ))}
-        </div>
-      )}
-
-      <div className="controls">
-        <button className="btn" onClick={drawCard} disabled={!isMyTurn}>
-          Tarik Kartu
-        </button>
-        <button className="btn" onClick={callUno} disabled={hand.length !== 1}>
-          Panggil UNO!
-        </button>
-      </div>
-
-      <div className="hand">
-        {hand.map((c) => (
-          <Card key={c.id} card={c} onClick={playCard} disabled={!isMyTurn} />
-        ))}
-      </div>
-
-      <ChatPanel messages={messages} onSend={sendChat} />
-    </div>
+    </>
   );
 }
