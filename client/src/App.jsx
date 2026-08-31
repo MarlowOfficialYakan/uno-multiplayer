@@ -4,6 +4,9 @@ import { socket, emitAsync, getClientId, saveSession, loadSession, clearSession 
 import TableBackground from "./components/table/TableBackground";
 import GameTable from "./components/table/GameTable";
 import SettingsToggle from "./components/SettingsToggle";
+import EpicMoment from "./components/epic/EpicMoment";
+import FloatingCards from "./components/FloatingCards";
+import { useSettings } from "./context/SettingsContext";
 
 function ChatPanel({ messages, onSend }) {
   const [text, setText] = useState("");
@@ -79,6 +82,7 @@ function ChatToggle({ messages, onSend }) {
 const PLACE_LABEL = ["🥇 Juara 1", "🥈 Juara 2", "🥉 Juara 3"];
 
 export default function App() {
+  const { isLow } = useSettings();
   const [connected, setConnected] = useState(socket.connected);
   const [name, setName] = useState("");
   const [joinCode, setJoinCode] = useState("");
@@ -91,8 +95,15 @@ export default function App() {
   const [pendingWild, setPendingWild] = useState(null);
   const [messages, setMessages] = useState([]);
   const [rejoining, setRejoining] = useState(true);
+  const [epicTrigger, setEpicTrigger] = useState(null);
 
   const myId = getClientId();
+  const lastPlayingSnapshotRef = useRef(null); // last known "playing" game state, for the win freeze-frame
+  const handledWinRef = useRef(null); // winnerId we've already fired the win Epic Moment for
+
+  const triggerEpic = useCallback((type, payload) => {
+    setEpicTrigger({ type, payload, key: `${type}-${Date.now()}-${Math.random().toString(36).slice(2)}` });
+  }, []);
 
   // Try to silently restore a previous session (refresh / dropped connection)
   const tryRejoin = useCallback(async () => {
@@ -150,6 +161,23 @@ export default function App() {
       socket.off("chat_message", onChat);
     };
   }, [tryRejoin]);
+
+  // Epic Moment — "game win" trigger. Keeps the last "playing" snapshot
+  // around so the board can stay frozen on the winning moment while the
+  // cinematic plays, and fires exactly once per finished game (guarded by
+  // handledWinRef) regardless of how many game_update events arrive.
+  useEffect(() => {
+    if (!game) return;
+    if (game.status === "playing") {
+      lastPlayingSnapshotRef.current = game;
+      return;
+    }
+    if (game.status === "finished" && game.winnerId && handledWinRef.current !== game.winnerId) {
+      handledWinRef.current = game.winnerId;
+      const winnerName = game.players.find((p) => p.id === game.winnerId)?.name || game.allNames?.[game.winnerId] || "?";
+      triggerEpic("win", { winnerName });
+    }
+  }, [game, triggerEpic]);
 
   const clearError = useCallback(() => setError(""), []);
 
@@ -211,10 +239,10 @@ export default function App() {
     }
   };
 
-  const playCard = async (card) => {
+  const playCard = async (card, point) => {
     clearError();
     if (card.color === "wild") {
-      setPendingWild(card.id);
+      setPendingWild({ cardId: card.id, origin: point || null });
       return;
     }
     try {
@@ -225,7 +253,7 @@ export default function App() {
   };
 
   const confirmWildColor = async (color) => {
-    const cardId = pendingWild;
+    const cardId = pendingWild?.cardId;
     setPendingWild(null);
     try {
       await emitAsync("play_card", { cardId, chosenColor: color });
@@ -273,6 +301,9 @@ export default function App() {
     setGame(null);
     setHand([]);
     setMessages([]);
+    setEpicTrigger(null);
+    handledWinRef.current = null;
+    lastPlayingSnapshotRef.current = null;
     socket.disconnect();
     socket.connect();
   };
@@ -292,6 +323,7 @@ export default function App() {
     return (
       <TableBackground>
         <SettingsToggle />
+        {!isLow && <FloatingCards />}
         <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 px-4 text-center overflow-y-auto py-6">
           <motion.h1
             initial={{ y: -16, opacity: 0 }}
@@ -521,6 +553,32 @@ export default function App() {
     );
   }
 
+  if (game.status === "finished" && epicTrigger) {
+    // Epic Moment is playing over the winning moment — keep the board
+    // frozen on the last known "playing" snapshot underneath the overlay
+    // (per the spec: this never touches game state/socket sync, it only
+    // delays *revealing* the finished screen until RESOLVE completes).
+    const frozen = lastPlayingSnapshotRef.current || game;
+    return (
+      <>
+        <GameTable
+          game={frozen}
+          hand={hand}
+          myId={myId}
+          onPlay={() => {}}
+          onDraw={() => {}}
+          onCallUno={() => {}}
+          onCatchUno={() => {}}
+          pendingWild={null}
+          onPickColor={() => {}}
+          error=""
+          triggerEpic={triggerEpic}
+        />
+        <EpicMoment trigger={epicTrigger} onDone={() => setEpicTrigger(null)} />
+      </>
+    );
+  }
+
   if (game.status === "finished") {
     const isRanked = game.winMode === "lastStanding" && Array.isArray(game.finishOrder) && game.finishOrder.length > 0;
     const winner = game.players.find((p) => p.id === game.winnerId);
@@ -588,7 +646,9 @@ export default function App() {
         pendingWild={pendingWild}
         onPickColor={confirmWildColor}
         error={error}
+        triggerEpic={triggerEpic}
       />
+      <EpicMoment trigger={epicTrigger} onDone={() => setEpicTrigger(null)} />
       <SettingsToggle />
       <div className="fixed bottom-3 right-3 z-40">
         <ChatToggle messages={messages} onSend={sendChat} />

@@ -5,15 +5,22 @@ import OpponentSeat from "./OpponentSeat";
 import PlayerHand from "./PlayerHand";
 import DiscardPile from "./DiscardPile";
 import DrawPile from "./DrawPile";
+import DrawFlight from "./DrawFlight";
 import ColorPicker from "./ColorPicker";
-import UnoCallout from "./UnoCallout";
 import { useSound } from "../../hooks/useSound";
+
+const DRAW_WILD_TYPES = new Set(["wild4", "wild10"]);
 
 /**
  * Pure presentation layer for the in-progress game screen. All game state
  * (`game`, `hand`) and every action (`onPlay`, `onDraw`, ...) are passed in
  * as props from App.jsx, which still owns 100% of the Socket.io logic —
  * this component never touches the socket directly.
+ *
+ * `triggerEpic(type, payload)` fires the Epic Moment overlay (mounted once,
+ * globally, in App.jsx) — this component calls it for the "UNO call" and
+ * "+4/+10 attack" triggers; the "game win" trigger is detected in App.jsx
+ * itself since it needs to freeze the board across a status transition.
  */
 export default function GameTable({
   game,
@@ -26,23 +33,37 @@ export default function GameTable({
   pendingWild,
   onPickColor,
   error,
+  triggerEpic,
 }) {
   const playSound = useSound();
-  const [shake, setShake] = useState(false);
-  const [unoTrigger, setUnoTrigger] = useState(0);
   const [justDrawnId, setJustDrawnId] = useState(null);
+  const [drawFlight, setDrawFlight] = useState(null);
   const prevHandIds = useRef(hand.map((c) => c.id));
+  const prevGameRef = useRef(game);
+  const drawPileRef = useRef(null);
 
   // Fire draw/play SFX hooks whenever the hand actually changes, and — for
   // the "quick play after draw" feature — figure out which card is the one
   // that just got drawn so PlayerHand can highlight it, making it fast to
-  // find and tap without hunting through the fan.
+  // find and tap without hunting through the fan. Also kicks off the
+  // draw-pile -> hand "flight" ghost card with a glow trail.
   useEffect(() => {
     const prevIds = prevHandIds.current;
     const currIds = hand.map((c) => c.id);
 
     if (currIds.length > prevIds.length) {
       playSound("draw");
+
+      const rect = drawPileRef.current?.getBoundingClientRect();
+      if (rect) {
+        const from = { x: rect.left + rect.width / 2 - 24, y: rect.top + rect.height / 2 - 32 };
+        // Approximate hand-area target (bottom-center) rather than a precise
+        // per-card point — the fan re-flows on every hand change anyway.
+        const to = { x: window.innerWidth / 2 - 24, y: window.innerHeight - 160 };
+        setDrawFlight({ from, to });
+        setTimeout(() => setDrawFlight(null), 600);
+      }
+
       const prevSet = new Set(prevIds);
       const newCard = hand.find((c) => !prevSet.has(c.id));
       if (newCard) {
@@ -57,12 +78,30 @@ export default function GameTable({
     prevHandIds.current = currIds;
   }, [hand, playSound]);
 
+  // Epic Moment — "+4 / +10 attack" trigger: detected by diffing the top
+  // card. When a fresh draw-wild lands on the discard pile, the turn has
+  // already advanced past the attacker to the target, so:
+  //   attacker = whoever's turn it was right before this update
+  //   target   = whoever's turn it is now
+  useEffect(() => {
+    const prev = prevGameRef.current;
+    if (prev && game.topCard && prev.topCard?.id !== game.topCard.id) {
+      const isDrawWild = DRAW_WILD_TYPES.has(game.topCard.type);
+      const wasDrawWild = prev.topCard && DRAW_WILD_TYPES.has(prev.topCard.type);
+      if (isDrawWild && !wasDrawWild) {
+        const attackerName = game.players.find((p) => p.id === prev.currentPlayerId)?.name || "?";
+        const targetName = game.players.find((p) => p.id === game.currentPlayerId)?.name || "?";
+        const amount = game.topCard.type === "wild10" ? 10 : 4;
+        triggerEpic?.("attack", { attackerName, targetName, amount });
+      }
+    }
+    prevGameRef.current = game;
+  }, [game, triggerEpic]);
+
   const handleCallUno = () => {
     onCallUno();
-    setUnoTrigger((n) => n + 1);
-    setShake(true);
-    playSound("unoCall");
-    setTimeout(() => setShake(false), 500);
+    const me = game.players.find((p) => p.id === myId);
+    triggerEpic?.("uno", { playerName: me?.name || "?" });
   };
 
   const opponents = game.players.filter((p) => p.id !== myId);
@@ -70,7 +109,7 @@ export default function GameTable({
   const activePlayerName = game.players.find((p) => p.id === game.currentPlayerId)?.name;
 
   return (
-    <TableBackground className={shake ? "animate-shake" : ""}>
+    <TableBackground tilted>
       {/* overflow-y-auto is a safety net: if a phone's font-size/accessibility
           settings make content taller than the viewport, it scrolls instead
           of silently overlapping the sections below it. */}
@@ -97,7 +136,7 @@ export default function GameTable({
 
         <div className="flex-1 flex flex-col items-center justify-center gap-4 min-h-[9rem] py-3">
           <div className="flex items-center gap-8 sm:gap-14">
-            <DrawPile count={game.drawPileCount} onClick={onDraw} disabled={!isMyTurn} />
+            <DrawPile ref={drawPileRef} count={game.drawPileCount} onClick={onDraw} disabled={!isMyTurn} />
             <DiscardPile topCard={game.topCard} currentColor={game.currentColor} />
           </div>
 
@@ -120,9 +159,9 @@ export default function GameTable({
         <PlayerHand cards={hand} disabled={!isMyTurn} onPlay={onPlay} justDrawnId={justDrawnId} />
       </div>
 
-      <AnimatePresence>{pendingWild && <ColorPicker key="picker" onPick={onPickColor} />}</AnimatePresence>
+      <AnimatePresence>{pendingWild && <ColorPicker key="picker" origin={pendingWild.origin} onPick={onPickColor} />}</AnimatePresence>
 
-      <UnoCallout triggerKey={unoTrigger || null} />
+      <DrawFlight from={drawFlight?.from} to={drawFlight?.to} />
     </TableBackground>
   );
 }

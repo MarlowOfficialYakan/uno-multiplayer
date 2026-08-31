@@ -3,8 +3,10 @@ import { motion, AnimatePresence } from "framer-motion";
 import PlayingCard from "../cards/PlayingCard";
 import { COLOR_HEX } from "../../utils/theme";
 import { hashRotation } from "../../utils/cardLabel";
+import { useSettings } from "../../context/SettingsContext";
 
 export default function DiscardPile({ topCard, currentColor }) {
+  const { isLow } = useSettings();
   const rotation = useMemo(() => (topCard ? hashRotation(topCard.id) : 0), [topCard?.id]);
 
   if (!topCard) return null;
@@ -15,6 +17,9 @@ export default function DiscardPile({ topCard, currentColor }) {
     // container's bottom edge, so it can't overlap the turn-indicator text.
     <div className="flex flex-col items-center gap-1">
       <div className="relative w-[4.5rem] h-[6.5rem] sm:w-20 sm:h-28">
+        {!isLow && (
+          <div className="absolute left-1/2 -translate-x-1/2 -bottom-2 w-14 h-4 rounded-full bg-black/50 blur-md" />
+        )}
         {/* ghost cards behind, purely decorative — gives the pile depth without needing discard history from the server */}
         <div className="absolute inset-0 rounded-xl bg-black/30 rotate-6 scale-95 blur-[1px]" />
         <div className="absolute inset-0 rounded-xl bg-black/20 -rotate-3 scale-95 blur-[1px]" />

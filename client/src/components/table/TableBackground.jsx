@@ -1,7 +1,9 @@
 import { useSettings } from "../../context/SettingsContext";
+import TablePlane from "./TablePlane";
 
-export default function TableBackground({ children, className = "" }) {
+export default function TableBackground({ children, className = "", tilted = false }) {
   const { isLow } = useSettings();
+  const showTiltedPlane = tilted && !isLow;
 
   return (
     // 100dvh (not h-screen/100vh) so mobile browser chrome resizing the
@@ -17,6 +19,10 @@ export default function TableBackground({ children, className = "" }) {
       {!isLow && (
         <div className="absolute inset-0 opacity-[0.06] bg-[repeating-linear-gradient(45deg,#ffffff_0px,#ffffff_1px,transparent_1px,transparent_10px)]" />
       )}
+
+      {/* Part 1: tilted 3D table plane — game screen + Mode Tinggi only.
+          Purely decorative, sits behind all real (flat) UI content. */}
+      {showTiltedPlane && <TablePlane />}
 
       {/* vignette — a lighter version in low mode, full heavy inset-shadow otherwise */}
       <div

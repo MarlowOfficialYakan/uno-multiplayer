@@ -11,6 +11,9 @@ const SOUND_MAP = {
   unoCall: null, // e.g. "/sfx/uno-call.mp3"
   win: null, // e.g. "/sfx/win-fanfare.mp3"
   flip: null, // e.g. "/sfx/card-flip.mp3"
+  epicCharge: null, // e.g. "/sfx/epic-whoosh.mp3" — Epic Moment CHARGE beat
+  epicBurst: null, // e.g. "/sfx/epic-boom.mp3" — Epic Moment BURST beat
+  epicResolve: null, // e.g. "/sfx/epic-sting.mp3" — Epic Moment RESOLVE beat
 };
 
 export function useSound() {

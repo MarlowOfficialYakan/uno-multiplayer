@@ -81,6 +81,64 @@ Semua perubahan di atas murni menambah — tidak ada event Socket.io lama
 yang berubah bentuk, jadi kompatibel dengan alur reconnect/anti-cheat yang
 sudah ada.
 
+## Update: 3D redesign + Epic Moment system
+
+Redesign visual besar mengikuti arahan "3D, cinematic, gokil" — semuanya
+lapisan presentasi murni, tidak menyentuh logika game/Socket.io.
+
+**Dependency baru:** `three` + `@react-three/fiber` (WebGL, dipakai
+seminimal mungkin — lihat di bawah).
+
+- **Meja 3D miring** (`TablePlane.jsx`) — permukaan felt tampak dilihat
+  dari sudut (CSS 3D transform, bukan WebGL), **Mode Tinggi saja**, hanya
+  di layar permainan. Mode Hemat tetap flat top-down seperti sebelumnya.
+  Draw pile & discard pile juga dikasih bayangan halus di bawahnya biar
+  terlihat "terangkat" dari meja.
+- **Kartu**: drag sekarang bisa ditarik dengan tilt + inertia lalu
+  balik-pegas otomatis (`dragSnapToOrigin`) — **cuma efek visual**, tap
+  tetap satu-satunya cara memainkan kartu. Wild/+4/+10 sekarang punya glow
+  berdenyut terus-menerus (bukan cuma pas hover). Card back dikasih pola
+  lattice embossed, bukan polos.
+- **Animasi draw** (`DrawFlight.jsx`) — kartu "terbang" dari draw pile ke
+  arah tangan dengan jejak glow yang memudar, tiap kali menarik kartu.
+- **Color picker Wild** sekarang benar-benar "muncul dari kartu" — posisi
+  radial-nya mengikuti titik kamu men-tap kartu Wild, bukan selalu di
+  tengah layar.
+- **Kartu dekoratif melayang** (`FloatingCards.jsx`) di layar utama/menu,
+  Mode Tinggi saja — nuansa "masuk ke pertandingan", bukan form biasa.
+
+### Epic Moment (fitur baru)
+
+Sequence sinematik 5-beat (**FREEZE → FOCUS → CHARGE → BURST → RESOLVE**)
+yang "membajak layar" sebentar (~1.5–3.5 detik) di momen-momen penting.
+Satu komponen reusable (`components/epic/EpicMoment.jsx`), di-tema ulang
+lewat `epicThemes.js` — trigger baru = tambah entri tema, bukan tulis ulang
+sequence-nya.
+
+- **Trigger aktif:**
+  - `win` — pemain habis kartu & menang. Emas/putih, versi terpanjang.
+    Papan di-freeze pada momen kemenangan (`App.jsx` menyimpan snapshot
+    terakhir game masih `"playing"`) sampai sequence selesai, baru layar
+    hasil akhir/ranking muncul.
+  - `uno` — panggil UNO berhasil. Kuning, versi dipersingkat (lewati
+    FREEZE). Menggantikan komponen `UnoCallout` lama.
+  - `attack` — kartu +4/+10 dimainkan. Merah, dideteksi otomatis di
+    `GameTable.jsx` dengan membandingkan kartu teratas sebelum/sesudah
+    (penyerang = giliran sebelumnya, target = giliran sekarang).
+  - `comeback` — tema & sequence-nya sudah siap tapi **belum ditrigger**;
+    deteksi "pembalikan dari posisi kalah" butuh tracking histori yang
+    perlu didefinisikan lebih spesifik dulu (opsional sesuai spec).
+- **WebGL seminimal mungkin**: `<Canvas>` (`EpicScene.jsx`) cuma di-mount
+  selama beat FOCUS/CHARGE/BURST (~1–1.5 detik), dan **cuma di Mode
+  Tinggi** — di Mode Hemat, seluruh sequence jalan dengan CSS/Framer Motion
+  saja, tanpa WebGL sama sekali.
+- **Skip-on-tap** muncul setelah ~1.5 detik.
+- **Hook SFX** (`onCharge`/`onBurst`/`onResolve` props + `useSound.js`:
+  `epicCharge`/`epicBurst`/`epicResolve`) sudah terpasang di titik yang
+  tepat, tinggal isi file audio-nya.
+- **Tidak memblokir sync**: overlay ini murni visual di atas state yang
+  sudah diterima dari server — Socket.io tetap jalan normal di baliknya.
+
 Kenapa server tidak di Vercel? Vercel serverless function tidak cocok untuk
 koneksi WebSocket yang harus tetap hidup selama game berlangsung (lihat
 penjelasan sebelumnya). Jadi: **frontend di Vercel, server game di Render
